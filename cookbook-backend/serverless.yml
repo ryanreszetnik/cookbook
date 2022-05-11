@@ -1,0 +1,106 @@
+service: recipes
+
+frameworkVersion: "2"
+
+custom:
+  stage: ${opt:stage, self:provider.stage}
+
+provider:
+  name: aws
+  runtime: nodejs12.x
+  environment:
+    DOMAIN_SUFFIX: recipes
+  lambdaHashingVersion: 20201221
+  profile: serverlessUser
+  stage: dev
+  region: ca-central-1
+  httpApi:
+    cors: true
+  iamRoleStatements:
+    - Effect: Allow
+      Action:
+        - dynamodb:*
+        - lambda:*
+      Resource: "*"
+
+functions:
+  save-recipe:
+    handler: lambdas/endpoints/extension/http-save-recipe.handler
+    events:
+      - http:
+          path: /
+          method: PUT
+          cors: true
+          authorizer:
+            type: COGNITO_USER_POOLS
+            authorizerId:
+              Ref: ApiGatewayAuthorizer
+  delete-recipe:
+    handler: lambdas/endpoints/website/http-delete-recipe.handler
+    events:
+      - http:
+          path: /
+          method: DELETE
+          cors: true
+          authorizer:
+            type: COGNITO_USER_POOLS
+            authorizerId:
+              Ref: ApiGatewayAuthorizer
+  postConfirmation:
+    handler: lambdas/endpoints/cognito/http-register-account.handler
+    events:
+      - cognitoUserPool:
+          pool: MyUserPool
+          trigger: PostConfirmation
+  website-app-load:
+    handler: lambdas/endpoints/website/http-app-load.handler
+    events:
+      - http:
+          path: /
+          method: GET
+          cors: true
+          authorizer:
+            type: COGNITO_USER_POOLS
+            authorizerId:
+              Ref: ApiGatewayAuthorizer
+
+resources:
+  Resources:
+    CognitoUserPoolMyUserPool:
+      Type: AWS::Cognito::UserPool
+      Properties:
+        UserPoolName: recipes-user-pool-${opt:stage, self:provider.stage}
+        UsernameAttributes:
+          - email
+        AutoVerifiedAttributes:
+          - email
+    serviceUserPoolClient:
+      Type: AWS::Cognito::UserPoolClient
+      Properties:
+        ClientName: ${self:service}-${self:custom.stage}-user-pool-client
+        UserPoolId:
+          Ref: CognitoUserPoolMyUserPool
+        GenerateSecret: false
+    ApiGatewayAuthorizer:
+      Type: AWS::ApiGateway::Authorizer
+      Properties:
+        Name: CognitoUserPool
+        Type: COGNITO_USER_POOLS
+        IdentitySource: method.request.header.Authorization
+        RestApiId:
+          Ref: ApiGatewayRestApi
+        ProviderARNs:
+          - Fn::GetAtt:
+              - CognitoUserPoolMyUserPool
+              - Arn
+    usersTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: recipes-users
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: sub
+            AttributeType: S
+        KeySchema:
+          - AttributeName: sub
+            KeyType: HASH

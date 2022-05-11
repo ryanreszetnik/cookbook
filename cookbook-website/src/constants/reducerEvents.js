@@ -1,0 +1,3 @@
+export const SET_AUTHENTICATED = "SET_AUTHENTICATED";
+export const SET_RECIPES = "SET_RECIPES";
+export const DELETE_RECIPE = "DELETE_RECIPE";
